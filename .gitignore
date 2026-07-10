@@ -4,6 +4,7 @@ go-audit.yaml
 *.pprof
 *.test
 *.deb
+*.backup
 *.out
 .eccfg/*
 node_modules

@@ -11,6 +11,9 @@ bin:
 
 install:
 	/usr/bin/cp -fvp go-audit /usr/local/sbin/ec-go-audit
+	/usr/bin/perl -i.backup -pe 's#^\#\s*BUILD_NUMBER\s*=\s*#\# BUILD_NUMBER='$(BUILD_NUMBER)'#g;' ec-go-audit.yaml
+	/usr/bin/cp -fvp ec-go-audit.yaml /etc/
+	/usr/bin/chmod -v 640 /etc/ec-go-audit.yaml
 
 test:
 	go test -v

@@ -1,0 +1,65 @@
+# BUILD_NUMBER=dev+20260710183156+/etc/ecmwf/nfs/dh1_home_a/syg/git/go-audit+ebb758adev+20260710183118+/etc/ecmwf/nfs/dh1_home_a/syg/git/go-audit+ebb758adev+20260710183029+/etc/ecmwf/nfs/dh1_home_a/syg/git/go-audit+ebb758adev+20260710174802+/etc/ecmwf/nfs/dh1_home_a/syg/git/go-audit+ebb758a
+# for more inspiration: 
+# https://github.com/slackhq/go-audit/blob/master/go-audit.yaml.example 
+# in particular:  filters:
+
+# if kaudit filtering isn't powerful enough you can use the following filter mechanism
+# filters:
+#   # Each filter consists of exactly 3 parts
+#   - syscall: 49 # The syscall id of the message group (a single log line from go-audit), to test against the regex
+#     message_type: 1306 # The message type identifier containing the data to test against the regex
+#     regex: saddr=(10..|0A..) # The regex to test against the message specific message types data
+# 
+
+canary: false
+
+# use /var/run/go-audit.sock to write events
+output:
+  stdout:
+    enabled: 0
+    attempts: 2
+  syslog:
+    enabled: 1
+    attempts: 15
+    #network: unix
+    network: unixgram
+    address: /dev/log
+    # 132 = local0/warn; 36=auth.warn
+    priority: 132  
+    tag: go-audit
+    # tag: ec-go-audit
+
+# log an event when we believe a message has been lost
+message_tracking:
+  enabled: true
+  log_out_of_order: false
+  max_out_of_order: 5000
+
+events:
+  min: 1300
+  max: 1320
+# NB: EOE is 1320, PROCTITLE 1327... so drop PROCTITLE, for instance, by above to be inspected
+
+rules:
+  - -b 1024
+  - -e 1
+  - -f 1
+  # required if you set canary: true
+  #- -w /proc/net/netlink -p war -k netlink-file
+  #- -a never,exit -F arch=b64 -S write
+  - -a exit,never  -F arch=b64 -S write 
+  - -a exit,always -F arch=b64 -C uid!=euid -S execve -S execveat -F auid!=0 -F auid!=-1 -k EC_euid_uid_delta
+
+
+# exclude filtering
+filters:
+  - syscall: 59
+    message_type: 1300
+    regex: (ecauth|restorecon|getent|namespace)
+  - syscall: 59
+    message_type: 1302
+    regex: /eXXXcfs-client/
+    # MAYBE better: whitelest ecfs stuff via always,exclude on dir-watch for ecfs install directory?§
+  - syscall: 59
+    message_type: 1309
+    regex: /eXXXcfs-client/
