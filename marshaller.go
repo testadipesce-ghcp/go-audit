@@ -83,7 +83,7 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
         _t = nlMsg.Header.Type
 	if !( _t >= 1103 && _t <= 1104 ) && ( _t <  a.eventMin || _t > a.eventMax || _t == 1305 ) {
 
-		// looks like USERLAND msgtype 1103: pam setcred to new credentials;  1104: restore?  should check pam modules' source code
+		// looks like USERLAND msgtype 1103: pam setcred to new credentials;  1104: restore?  should check pam modules' source code - these are nice to have, include them first in dirty way without going through the parse with a whitelist array or similar
 
 
 		// Drop all audit messages that aren't things we care about or end a multi packet event

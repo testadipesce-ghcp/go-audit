@@ -1,4 +1,4 @@
-BUILD_NUMBER ?= dev+$(shell date -u '+%Y%m%d%H%M%S')
+BUILD_NUMBER ?= dev+$(shell date -u '+%Y%m%d%H%M%S')+$(shell pwd -P)+$(shell /usr/bin/git  log -n1 --pretty=format:"%h")
 GO111MODULE = on
 export GO111MODULE
 
@@ -8,6 +8,9 @@ ALL = linux-amd64 linux-arm64
 
 bin:
 	go build -ldflags "$(LDFLAGS)"
+
+install:
+	/usr/bin/cp -fvp go-audit /usr/local/sbin/ec-go-audit
 
 test:
 	go test -v
