@@ -77,7 +77,15 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 		a.detectMissing(aMsg.Seq)
 	}
 
-	if nlMsg.Header.Type < a.eventMin || nlMsg.Header.Type > a.eventMax {
+// syg202607 tuning	if nlMsg.Header.Type < a.eventMin || nlMsg.Header.Type > a.eventMax {
+
+        var _t uint16
+        _t = nlMsg.Header.Type
+	if !( _t >= 1103 && _t <= 1104 ) && ( _t <  a.eventMin || _t > a.eventMax || _t == 1305 ) {
+
+		// looks like USERLAND msgtype 1103: pam setcred to new credentials;  1104: restore?  should check pam modules' source code
+
+
 		// Drop all audit messages that aren't things we care about or end a multi packet event
 		a.flushOld()
 		return
