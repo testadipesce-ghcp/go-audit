@@ -287,6 +287,105 @@ func createStdOutOutput(config *viper.Viper) (*AuditWriter, error) {
 	return NewAuditWriter(os.Stdout, attempts), nil
 }
 
+// parseEventTypes parses a config key holding a list of audit event types into a []uint16.
+// Each entry may be a single event type (e.g. 1305) or, as a string, an inclusive range
+// (e.g. "1300-1399"), which is expanded into its individual values.
+func parseEventTypes(config *viper.Viper, key string) ([]uint16, error) {
+	raw := config.Get(key)
+	if raw == nil {
+		return nil, nil
+	}
+
+	entries, ok := raw.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("Could not parse `%s`; expected a list", key)
+	}
+
+	var types []uint16
+	for i, entry := range entries {
+		switch v := entry.(type) {
+		case int:
+			t, err := eventTypeFromInt(v, key, i+1)
+			if err != nil {
+				return nil, err
+			}
+			types = append(types, t)
+
+		case string:
+			expanded, err := parseEventTypeEntry(v, key, i+1)
+			if err != nil {
+				return nil, err
+			}
+			types = append(types, expanded...)
+
+		default:
+			return nil, fmt.Errorf("Entry %d in `%s` could not be parsed; Value: `%+v`", i+1, key, entry)
+		}
+	}
+
+	return types, nil
+}
+
+// parseEventTypeEntry parses a single string entry from an event type list, which is either
+// a plain event type (e.g. "1305") or an inclusive range (e.g. "1300-1399")
+func parseEventTypeEntry(v string, key string, pos int) ([]uint16, error) {
+	v = strings.TrimSpace(v)
+
+	dash := strings.IndexByte(v, '-')
+	if dash < 0 {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("Entry %d in `%s` could not be parsed; Value: `%s`; Error: %s", pos, key, v, err)
+		}
+
+		t, err := eventTypeFromInt(n, key, pos)
+		if err != nil {
+			return nil, err
+		}
+
+		return []uint16{t}, nil
+	}
+
+	min, err := strconv.Atoi(strings.TrimSpace(v[:dash]))
+	if err != nil {
+		return nil, fmt.Errorf("Range `%s` in `%s` entry %d could not be parsed; Error: %s", v, key, pos, err)
+	}
+
+	max, err := strconv.Atoi(strings.TrimSpace(v[dash+1:]))
+	if err != nil {
+		return nil, fmt.Errorf("Range `%s` in `%s` entry %d could not be parsed; Error: %s", v, key, pos, err)
+	}
+
+	if min > max {
+		return nil, fmt.Errorf("Range `%s` in `%s` entry %d has a minimum greater than its maximum", v, key, pos)
+	}
+
+	minT, err := eventTypeFromInt(min, key, pos)
+	if err != nil {
+		return nil, err
+	}
+
+	maxT, err := eventTypeFromInt(max, key, pos)
+	if err != nil {
+		return nil, err
+	}
+
+	types := make([]uint16, 0, int(maxT)-int(minT)+1)
+	for t := int(minT); t <= int(maxT); t++ {
+		types = append(types, uint16(t))
+	}
+
+	return types, nil
+}
+
+func eventTypeFromInt(v int, key string, pos int) (uint16, error) {
+	if v < 0 || v > 65535 {
+		return 0, fmt.Errorf("Entry %d in `%s` is out of range for a uint16; Value: `%d`", pos, key, v)
+	}
+
+	return uint16(v), nil
+}
+
 func createFilters(config *viper.Viper) ([]AuditFilter, error) {
 	var err error
 	var ok bool
@@ -400,6 +499,16 @@ func main() {
 		el.Fatal(err)
 	}
 
+	eventAllow, err := parseEventTypes(config, "events.allow")
+	if err != nil {
+		el.Fatal(err)
+	}
+
+	eventExclude, err := parseEventTypes(config, "events.exclude")
+	if err != nil {
+		el.Fatal(err)
+	}
+
 	nlClient, err := NewNetlinkClient(config.GetInt("socket_buffer.receive"))
 	if err != nil {
 		el.Fatal(err)
@@ -413,6 +522,8 @@ func main() {
 		config.GetBool("message_tracking.log_out_of_order"),
 		config.GetInt("message_tracking.max_out_of_order"),
 		filters,
+		eventAllow,
+		eventExclude,
 		createExtraParsers(config),
 	)
 

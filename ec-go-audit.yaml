@@ -39,6 +39,14 @@ events:
   min: 1300
   max: 1320
 # NB: EOE is 1320, PROCTITLE 1327... so drop PROCTITLE, for instance, by above to be inspected
+  # 1103/1104: USERLAND msgtype pam setcred to new credentials / restore; nice to have, so let them
+  # through even though they fall outside [min, max]
+  allow:
+    - 1103
+    - 1104
+  # 1305 (AUDIT_CONFIG_CHANGE) is noisy, drop it even though it's inside [min, max]
+  exclude:
+    - 1305
 
 rules:
   - -b 1024

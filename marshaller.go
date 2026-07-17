@@ -24,6 +24,8 @@ type AuditMarshaller struct {
 	maxOutOfOrder int
 	attempts      int
 	filters       map[string]map[uint16][]*regexp.Regexp // { syscall: { mtype: [regexp, ...] } }
+	eventAllow    map[uint16]bool
+	eventExclude  map[uint16]bool
 	extraParsers  ExtraParsers
 }
 
@@ -34,7 +36,7 @@ type AuditFilter struct {
 }
 
 // Create a new marshaller
-func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, extraParsers ExtraParsers) *AuditMarshaller {
+func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, eventAllow []uint16, eventExclude []uint16, extraParsers ExtraParsers) *AuditMarshaller {
 	am := AuditMarshaller{
 		writer:        w,
 		msgs:          make(map[int]*AuditMessageGroup, 5), // It is not typical to have more than 2 message groups at any given time
@@ -45,6 +47,8 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 		logOutOfOrder: logOOO,
 		maxOutOfOrder: maxOOO,
 		filters:       make(map[string]map[uint16][]*regexp.Regexp),
+		eventAllow:    make(map[uint16]bool, len(eventAllow)),
+		eventExclude:  make(map[uint16]bool, len(eventExclude)),
 		extraParsers:  extraParsers,
 	}
 
@@ -58,6 +62,14 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 		}
 
 		am.filters[filter.syscall][filter.messageType] = append(am.filters[filter.syscall][filter.messageType], filter.regex)
+	}
+
+	for _, t := range eventAllow {
+		am.eventAllow[t] = true
+	}
+
+	for _, t := range eventExclude {
+		am.eventExclude[t] = true
 	}
 
 	return &am
@@ -77,19 +89,13 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 		a.detectMissing(aMsg.Seq)
 	}
 
-// syg202607 tuning	if nlMsg.Header.Type < a.eventMin || nlMsg.Header.Type > a.eventMax {
-
-        var _t uint16
-        _t = nlMsg.Header.Type
-	if !( _t >= 1103 && _t <= 1104 ) && ( _t <  a.eventMin || _t > a.eventMax || _t == 1305 ) {
-
-		// looks like USERLAND msgtype 1103: pam setcred to new credentials;  1104: restore?  should check pam modules' source code - these are nice to have, include them first in dirty way without going through the parse with a whitelist array or similar
-
-
+	t := nlMsg.Header.Type
+	inRange := t >= a.eventMin && t <= a.eventMax
+	if a.eventExclude[t] || !(a.eventAllow[t] || inRange) {
 		// Drop all audit messages that aren't things we care about or end a multi packet event
 		a.flushOld()
 		return
-	} else if nlMsg.Header.Type == EVENT_EOE {
+	} else if t == EVENT_EOE {
 		// This is end of event msg, flush the msg with that sequence and discard this one
 		a.completeMessage(aMsg.Seq)
 		return

@@ -16,7 +16,7 @@ func TestMarshallerConstants(t *testing.T) {
 
 func TestAuditMarshaller_Consume(t *testing.T) {
 	w := &bytes.Buffer{}
-	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1100), uint16(1399), false, false, 0, []AuditFilter{}, nil)
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1100), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil)
 
 	// Flush group on 1320
 	m.Consume(&syscall.NetlinkMessage{
@@ -119,12 +119,50 @@ func TestAuditMarshaller_Consume(t *testing.T) {
 	assert.Equal(t, 0, len(m.msgs))
 }
 
+func TestAuditMarshaller_Consume_EventAllowExclude(t *testing.T) {
+	w := &bytes.Buffer{}
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, []uint16{1103}, []uint16{1305}, nil)
+
+	// Allow-listed type outside [min, max] is kept
+	w.Reset()
+	m.Consume(&syscall.NetlinkMessage{
+		Header: syscall.NlMsghdr{Type: uint16(1103)},
+		Data:   []byte("audit(10000001:1): hi there"),
+	})
+	m.Consume(new1320("1"))
+	assert.Equal(
+		t,
+		"{\"sequence\":1,\"timestamp\":\"10000001\",\"messages\":[{\"type\":1103,\"data\":\"hi there\"}],\"uid_map\":{}}\n",
+		w.String(),
+	)
+	assert.Equal(t, 0, len(m.msgs))
+
+	// Excluded type inside [min, max] is dropped
+	w.Reset()
+	m.Consume(&syscall.NetlinkMessage{
+		Header: syscall.NlMsghdr{Type: uint16(1305)},
+		Data:   []byte("audit(10000001:2): hi there"),
+	})
+	assert.Equal(t, 0, len(m.msgs))
+	assert.Equal(t, "", w.String())
+
+	// Type in both allow and exclude is dropped (exclude wins)
+	w.Reset()
+	m2 := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, []uint16{1305}, []uint16{1305}, nil)
+	m2.Consume(&syscall.NetlinkMessage{
+		Header: syscall.NlMsghdr{Type: uint16(1305)},
+		Data:   []byte("audit(10000001:3): hi there"),
+	})
+	assert.Equal(t, 0, len(m2.msgs))
+	assert.Equal(t, "", w.String())
+}
+
 func TestAuditMarshaller_completeMessage(t *testing.T) {
 	//TODO: cant test because completeMessage calls exit
 	t.Skip()
 	return
 	// lb, elb := hookLogger()
-	// m := NewAuditMarshaller(NewAuditWriter(&FailWriter{}, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{})
+	// m := NewAuditMarshaller(NewAuditWriter(&FailWriter{}, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil)
 
 	// m.Consume(&syscall.NetlinkMessage{
 	// 	Header: syscall.NlMsghdr{

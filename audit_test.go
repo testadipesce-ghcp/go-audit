@@ -538,8 +538,72 @@ func Test_createFilters(t *testing.T) {
 	assert.Equal(t, "Ignoring syscall `1` containing message type `1` matching string `1`\n", lb.String())
 }
 
+func Test_parseEventTypes(t *testing.T) {
+	// Missing key
+	c := viper.New()
+	types, err := parseEventTypes(c, "events.allow")
+	assert.Nil(t, err)
+	assert.Empty(t, types)
+
+	// Bad outer value
+	c = viper.New()
+	c.Set("events.allow", 1)
+	types, err = parseEventTypes(c, "events.allow")
+	assert.EqualError(t, err, "Could not parse `events.allow`; expected a list")
+	assert.Empty(t, types)
+
+	// Unsupported entry type
+	c = viper.New()
+	c.Set("events.allow", []interface{}{false})
+	types, err = parseEventTypes(c, "events.allow")
+	assert.EqualError(t, err, "Entry 1 in `events.allow` could not be parsed; Value: `false`")
+	assert.Empty(t, types)
+
+	// Int out of range
+	c = viper.New()
+	c.Set("events.allow", []interface{}{70000})
+	types, err = parseEventTypes(c, "events.allow")
+	assert.EqualError(t, err, "Entry 1 in `events.allow` is out of range for a uint16; Value: `70000`")
+	assert.Empty(t, types)
+
+	// Bad string entry
+	c = viper.New()
+	c.Set("events.allow", []interface{}{"nope"})
+	types, err = parseEventTypes(c, "events.allow")
+	assert.EqualError(t, err, "Entry 1 in `events.allow` could not be parsed; Value: `nope`; Error: strconv.Atoi: parsing \"nope\": invalid syntax")
+	assert.Empty(t, types)
+
+	// Bad range bounds
+	c = viper.New()
+	c.Set("events.allow", []interface{}{"1300-nope"})
+	types, err = parseEventTypes(c, "events.allow")
+	assert.EqualError(t, err, "Range `1300-nope` in `events.allow` entry 1 could not be parsed; Error: strconv.Atoi: parsing \"nope\": invalid syntax")
+	assert.Empty(t, types)
+
+	// Range min greater than max
+	c = viper.New()
+	c.Set("events.allow", []interface{}{"1399-1300"})
+	types, err = parseEventTypes(c, "events.allow")
+	assert.EqualError(t, err, "Range `1399-1300` in `events.allow` entry 1 has a minimum greater than its maximum")
+	assert.Empty(t, types)
+
+	// Range out of uint16 range
+	c = viper.New()
+	c.Set("events.allow", []interface{}{"65530-70000"})
+	types, err = parseEventTypes(c, "events.allow")
+	assert.EqualError(t, err, "Entry 1 in `events.allow` is out of range for a uint16; Value: `70000`")
+	assert.Empty(t, types)
+
+	// Good: mix of ints, single-value strings, and a range
+	c = viper.New()
+	c.Set("events.allow", []interface{}{1103, "1104", "1300-1303"})
+	types, err = parseEventTypes(c, "events.allow")
+	assert.Nil(t, err)
+	assert.Equal(t, []uint16{1103, 1104, 1300, 1301, 1302, 1303}, types)
+}
+
 func Benchmark_MultiPacketMessage(b *testing.B) {
-	marshaller := NewAuditMarshaller(NewAuditWriter(&noopWriter{}, 1), uint16(1300), uint16(1399), false, false, 1, []AuditFilter{}, nil)
+	marshaller := NewAuditMarshaller(NewAuditWriter(&noopWriter{}, 1), uint16(1300), uint16(1399), false, false, 1, []AuditFilter{}, nil, nil, nil)
 
 	data := make([][]byte, 6)
 

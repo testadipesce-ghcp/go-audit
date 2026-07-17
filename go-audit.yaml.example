@@ -12,6 +12,22 @@ events:
   # Maximum event type to capture, default 1399
   max: 1399
 
+  # Event types to always capture, even if outside the [min, max] range above
+  # Each entry is either a single event type, or an inclusive range "min-max"
+  # Default is empty
+  allow:
+  #  - 1103
+  #  - 1104
+  #  - "1750-1799"
+
+  # Event types to always drop, even if inside the [min, max] range above
+  # Each entry is either a single event type, or an inclusive range "min-max"
+  # `exclude` takes precedence over `allow` and the [min, max] range
+  # Default is empty
+  exclude:
+  #  - 1305
+  #  - "1330-1339"
+
 # Configure message sequence tracking
 message_tracking:
   # Track messages and identify if we missed any, default true
