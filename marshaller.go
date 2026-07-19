@@ -26,6 +26,7 @@ type AuditMarshaller struct {
 	filters       map[string]map[uint16][]*regexp.Regexp // { syscall: { mtype: [regexp, ...] } }
 	eventAllow    map[uint16]bool
 	eventExclude  map[uint16]bool
+	substitutions map[uint16][]AuditSubstitution // { mtype: [substitution, ...] }
 	extraParsers  ExtraParsers
 }
 
@@ -35,8 +36,16 @@ type AuditFilter struct {
 	syscall     string
 }
 
+// AuditSubstitution describes a regex substitution to apply to the data
+// portion of a parsed audit message of a given type
+type AuditSubstitution struct {
+	messageType uint16
+	regex       *regexp.Regexp
+	replace     string
+}
+
 // Create a new marshaller
-func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, eventAllow []uint16, eventExclude []uint16, extraParsers ExtraParsers) *AuditMarshaller {
+func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, eventAllow []uint16, eventExclude []uint16, substitutions []AuditSubstitution, extraParsers ExtraParsers) *AuditMarshaller {
 	am := AuditMarshaller{
 		writer:        w,
 		msgs:          make(map[int]*AuditMessageGroup, 5), // It is not typical to have more than 2 message groups at any given time
@@ -49,6 +58,7 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 		filters:       make(map[string]map[uint16][]*regexp.Regexp),
 		eventAllow:    make(map[uint16]bool, len(eventAllow)),
 		eventExclude:  make(map[uint16]bool, len(eventExclude)),
+		substitutions: make(map[uint16][]AuditSubstitution, len(substitutions)),
 		extraParsers:  extraParsers,
 	}
 
@@ -70,6 +80,10 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 
 	for _, t := range eventExclude {
 		am.eventExclude[t] = true
+	}
+
+	for _, sub := range substitutions {
+		am.substitutions[sub.messageType] = append(am.substitutions[sub.messageType], sub)
 	}
 
 	return &am
@@ -101,6 +115,8 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 		return
 	}
 
+	a.applySubstitutions(aMsg)
+
 	if val, ok := a.msgs[aMsg.Seq]; ok {
 		// Use the original AuditMessageGroup if we have one
 		val.AddMessage(aMsg)
@@ -111,6 +127,19 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 	a.extraParsers.Parse(aMsg)
 
 	a.flushOld()
+}
+
+// Applies any configured regex substitutions to the data portion of a message,
+// based on its message type
+func (a *AuditMarshaller) applySubstitutions(am *AuditMessage) {
+	subs, ok := a.substitutions[am.Type]
+	if !ok {
+		return
+	}
+
+	for _, sub := range subs {
+		am.Data = sub.regex.ReplaceAllString(am.Data, sub.replace)
+	}
 }
 
 // Outputs any messages that are old enough

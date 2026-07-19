@@ -146,6 +146,19 @@ filters:
     message_type: 1306 # The message type identifier containing the data to test against the regex
     regex: saddr=(10..|0A..) # The regex to test against the message specific message types data
 
+# Rewrite the `data` field of parsed messages of a given type before they are
+# output, useful for redacting or normalizing values (e.g. secrets, paths, IPs)
+substitutions:
+  # Each substitution consists of exactly 3 parts
+  - message_type: 1302 # The message type identifier of messages to apply the substitution to
+    regex: name="[^"]*" # The regex to match against that message type's data
+    replace: name="REDACTED" # The replacement text; may reference regex capture groups (e.g. $1)
+  # Multiple substitutions may target the same message_type; they are applied
+  # in the order they appear, each seeing the output of the previous one
+  - message_type: 1302
+    regex: cwd="[^"]*"
+    replace: cwd="REDACTED"
+
 extras:
   # Fetch extra fields for containers:
   # - containers.id

@@ -538,6 +538,138 @@ func Test_createFilters(t *testing.T) {
 	assert.Equal(t, "Ignoring syscall `1` containing message type `1` matching string `1`\n", lb.String())
 }
 
+func Test_createSubstitutions(t *testing.T) {
+	lb, elb := hookLogger()
+	defer resetLogger()
+
+	// no substitutions
+	c := viper.New()
+	s, err := createSubstitutions(c)
+	assert.Nil(t, err)
+	assert.Empty(t, s)
+
+	// Bad outer substitution value
+	c = viper.New()
+	c.Set("substitutions", 1)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "Could not parse substitutions object")
+	assert.Empty(t, s)
+
+	// Bad inner substitution value
+	c = viper.New()
+	rs := make([]interface{}, 0)
+	rs = append(rs, "bad substitution definition")
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "Could not parse substitution 1; 'bad substitution definition'")
+	assert.Empty(t, s)
+
+	// Bad message type - string
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"message_type": "bad message type"})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "`message_type` in substitution 1 could not be parsed; Value: `bad message type`; Error: strconv.ParseUint: parsing \"bad message type\": invalid syntax")
+	assert.Empty(t, s)
+
+	// Bad message type - unknown
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"message_type": false})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "`message_type` in substitution 1 could not be parsed; Value: `false`")
+	assert.Empty(t, s)
+
+	// Bad regex - not string
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"regex": false})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "`regex` in substitution 1 could not be parsed; Value: `false`")
+	assert.Empty(t, s)
+
+	// Bad regex - un-parse-able
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"regex": "["})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "`regex` in substitution 1 could not be parsed; Value: `[`; Error: error parsing regexp: missing closing ]: `[`")
+	assert.Empty(t, s)
+
+	// Bad replace - not string
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"replace": []string{}})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "`replace` in substitution 1 could not be parsed; Value: `[]`")
+	assert.Empty(t, s)
+
+	// Missing regex
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"message_type": "1", "replace": "1"})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "Substitution 1 is missing the `regex` entry")
+	assert.Empty(t, s)
+
+	// Missing message_type
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"regex": "1", "replace": "1"})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.EqualError(t, err, "Substitution 1 is missing the `message_type` entry")
+	assert.Empty(t, s)
+
+	// Good with strings
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"message_type": "1", "regex": "name=\"([^\"]*)\"", "replace": "name=\"REDACTED\""})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, s)
+	assert.Equal(t, uint16(1), s[0].messageType)
+	assert.Equal(t, "name=\"([^\"]*)\"", s[0].regex.String())
+	assert.Equal(t, "name=\"REDACTED\"", s[0].replace)
+	assert.Empty(t, elb.String())
+	assert.Equal(t, "Substituting message type `1` data matching `name=\"([^\"]*)\"` with `name=\"REDACTED\"`\n", lb.String())
+
+	// Good with ints
+	lb.Reset()
+	elb.Reset()
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"message_type": 1, "regex": "1", "replace": "2"})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, s)
+	assert.Equal(t, uint16(1), s[0].messageType)
+	assert.Equal(t, "1", s[0].regex.String())
+	assert.Equal(t, "2", s[0].replace)
+	assert.Empty(t, elb.String())
+	assert.Equal(t, "Substituting message type `1` data matching `1` with `2`\n", lb.String())
+
+	// Replace is optional, defaults to empty string
+	lb.Reset()
+	elb.Reset()
+	c = viper.New()
+	rs = make([]interface{}, 0)
+	rs = append(rs, map[string]interface{}{"message_type": 1, "regex": "1"})
+	c.Set("substitutions", rs)
+	s, err = createSubstitutions(c)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, s)
+	assert.Equal(t, "", s[0].replace)
+}
+
 func Test_parseEventTypes(t *testing.T) {
 	// Missing key
 	c := viper.New()
@@ -603,7 +735,7 @@ func Test_parseEventTypes(t *testing.T) {
 }
 
 func Benchmark_MultiPacketMessage(b *testing.B) {
-	marshaller := NewAuditMarshaller(NewAuditWriter(&noopWriter{}, 1), uint16(1300), uint16(1399), false, false, 1, []AuditFilter{}, nil, nil, nil)
+	marshaller := NewAuditMarshaller(NewAuditWriter(&noopWriter{}, 1), uint16(1300), uint16(1399), false, false, 1, []AuditFilter{}, nil, nil, nil, nil)
 
 	data := make([][]byte, 6)
 

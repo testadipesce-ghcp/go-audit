@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a `substitutions` config option to rewrite the `data` field of parsed
+  messages of a given type via regex, before they are output. Useful for
+  redacting or normalizing values.
+
 ## [1.2.0] - 2023-04-07
 
 ### Added

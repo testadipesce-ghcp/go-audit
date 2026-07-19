@@ -462,6 +462,78 @@ func createFilters(config *viper.Viper) ([]AuditFilter, error) {
 	return filters, nil
 }
 
+func createSubstitutions(config *viper.Viper) ([]AuditSubstitution, error) {
+	var err error
+	var ok bool
+
+	ss := config.Get("substitutions")
+	subs := []AuditSubstitution{}
+
+	if ss == nil {
+		return subs, nil
+	}
+
+	st, ok := ss.([]interface{})
+	if !ok {
+		return subs, fmt.Errorf("Could not parse substitutions object")
+	}
+
+	for i, s := range st {
+		s2, ok := s.(map[string]interface{})
+		if !ok {
+			return subs, fmt.Errorf("Could not parse substitution %d; '%+v'", i+1, s)
+		}
+
+		as := AuditSubstitution{}
+		for k, v := range s2 {
+			switch k {
+			case "message_type":
+				if ev, ok := v.(string); ok {
+					fv, err := strconv.ParseUint(ev, 10, 64)
+					if err != nil {
+						return subs, fmt.Errorf("`message_type` in substitution %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
+					}
+					as.messageType = uint16(fv)
+
+				} else if ev, ok := v.(int); ok {
+					as.messageType = uint16(ev)
+
+				} else {
+					return subs, fmt.Errorf("`message_type` in substitution %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+
+			case "regex":
+				re, ok := v.(string)
+				if !ok {
+					return subs, fmt.Errorf("`regex` in substitution %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+
+				if as.regex, err = regexp.Compile(re); err != nil {
+					return subs, fmt.Errorf("`regex` in substitution %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
+				}
+
+			case "replace":
+				if as.replace, ok = v.(string); !ok {
+					return subs, fmt.Errorf("`replace` in substitution %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+			}
+		}
+
+		if as.regex == nil {
+			return subs, fmt.Errorf("Substitution %d is missing the `regex` entry", i+1)
+		}
+
+		if as.messageType == 0 {
+			return subs, fmt.Errorf("Substitution %d is missing the `message_type` entry", i+1)
+		}
+
+		subs = append(subs, as)
+		l.Printf("Substituting message type `%v` data matching `%s` with `%s`\n", as.messageType, as.regex.String(), as.replace)
+	}
+
+	return subs, nil
+}
+
 func main() {
 	configFile := flag.String("config", "", "Config file location")
 	printVersion := flag.Bool("version", false, "Print version")
@@ -509,6 +581,11 @@ func main() {
 		el.Fatal(err)
 	}
 
+	substitutions, err := createSubstitutions(config)
+	if err != nil {
+		el.Fatal(err)
+	}
+
 	nlClient, err := NewNetlinkClient(config.GetInt("socket_buffer.receive"))
 	if err != nil {
 		el.Fatal(err)
@@ -524,6 +601,7 @@ func main() {
 		filters,
 		eventAllow,
 		eventExclude,
+		substitutions,
 		createExtraParsers(config),
 	)
 
