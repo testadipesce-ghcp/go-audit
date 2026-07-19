@@ -62,34 +62,9 @@ func NewAuditMessageGroup(am *AuditMessage) *AuditMessageGroup {
 func NewAuditMessage(nlm *syscall.NetlinkMessage) *AuditMessage {
 	aTime, seq := parseAuditHeader(nlm)
 
-// syg: trying to truncate the cap data out 
-	data := string(nlm.Data)
-	start := 0
-	start2 := 0
-
-	if start = strings.Index(data, "nametype="); start < 0 {
-	} else {
-	  data = data[0:start]
-        }
-
-	if start = strings.Index(data, "obj="); start < 0 {
-	} else {
-	  data = data[0:start]
-        }
-
-	if start = strings.Index(data, "subj="); start < 0 {
-	} else {
-		if start2 = strings.Index( data, "key=" ); start2 < 0 {
-		  data = data[0:start]
-		} else {
-		  data = data[0:start] + " " + data[start2:]
-		}
-		 
-        }
-
 	return &AuditMessage{
 		Type:      nlm.Header.Type,
-		Data:      data,
+		Data:      nlm.Data,
 		Seq:       seq,
 		AuditTime: aTime,
 	}
