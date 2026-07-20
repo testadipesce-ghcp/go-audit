@@ -64,7 +64,7 @@ func NewAuditMessage(nlm *syscall.NetlinkMessage) *AuditMessage {
 
 	return &AuditMessage{
 		Type:      nlm.Header.Type,
-		Data:      nlm.Data,
+		Data:      string(nlm.Data),
 		Seq:       seq,
 		AuditTime: aTime,
 	}
