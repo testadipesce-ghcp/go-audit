@@ -586,6 +586,16 @@ func main() {
 		el.Fatal(err)
 	}
 
+	messageFilters, err := createMessageFilters(config)
+	if err != nil {
+		el.Fatal(err)
+	}
+
+	seqRemaps, err := createSeqRemaps(config)
+	if err != nil {
+		el.Fatal(err)
+	}
+
 	nlClient, err := NewNetlinkClient(config.GetInt("socket_buffer.receive"))
 	if err != nil {
 		el.Fatal(err)
@@ -602,6 +612,8 @@ func main() {
 		eventAllow,
 		eventExclude,
 		substitutions,
+		messageFilters,
+		seqRemaps,
 		createExtraParsers(config),
 	)
 
@@ -621,4 +633,161 @@ func main() {
 
 		marshaller.Consume(msg)
 	}
+}
+
+func createMessageFilters(config *viper.Viper) ([]AuditMessageFilter, error) {
+	var err error
+
+	raw := config.Get("filter_messages")
+	excl := []AuditMessageFilter{}
+
+	if raw == nil {
+		return excl, nil
+	}
+
+	list, ok := raw.([]interface{})
+	if !ok {
+		return excl, fmt.Errorf("Could not parse filter_messages object")
+	}
+
+	for i, e := range list {
+		m, ok := e.(map[string]interface{})
+		if !ok {
+			return excl, fmt.Errorf("Could not parse filter_messages entry %d; '%+v'", i+1, e)
+		}
+
+		ae := AuditMessageFilter{}
+		for k, v := range m {
+			switch k {
+			case "message_type":
+				if ev, ok := v.(string); ok {
+					fv, err := strconv.ParseUint(ev, 10, 16)
+					if err != nil {
+						return excl, fmt.Errorf("`message_type` in filter_messages entry %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
+					}
+					ae.messageType = uint16(fv)
+
+				} else if ev, ok := v.(int); ok {
+					ae.messageType = uint16(ev)
+
+				} else {
+					return excl, fmt.Errorf("`message_type` in filter_messages entry %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+
+			case "regex":
+				re, ok := v.(string)
+				if !ok {
+					return excl, fmt.Errorf("`regex` in filter_messages entry %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+
+				if ae.regex, err = regexp.Compile(re); err != nil {
+					return excl, fmt.Errorf("`regex` in filter_messages entry %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
+				}
+
+			case "action":
+				a, ok := v.(string)
+				if !ok || (a != FilterActionGrep && a != FilterActionExclude) {
+					return excl, fmt.Errorf("`action` in filter_messages entry %d must be `grep` or `exclude`; Value: `%+v`", i+1, v)
+				}
+				ae.action = a
+			}
+		}
+
+		if ae.action == "" {
+			return excl, fmt.Errorf("filter_messages entry %d is missing the `action` entry", i+1)
+		}
+
+		if ae.regex == nil {
+			return excl, fmt.Errorf("Discard message entry %d is missing the `regex` entry", i+1)
+		}
+
+		if ae.messageType == 0 {
+			return excl, fmt.Errorf("Discard message entry %d is missing the `message_type` entry", i+1)
+		}
+
+		excl = append(excl, ae)
+		l.Printf("Message type `%v` filter action `%s` with regex `%s`\n", ae.messageType, ae.action, ae.regex.String())
+	}
+
+	return excl, nil
+}
+
+func createSeqRemaps(config *viper.Viper) ([]AuditSeqRemap, error) {
+	var err error
+
+	raw := config.Get("seqRemaps")
+	remaps := []AuditSeqRemap{}
+
+	if raw == nil {
+		return remaps, nil
+	}
+
+	list, ok := raw.([]interface{})
+	if !ok {
+		return remaps, fmt.Errorf("Could not parse seqRemaps object")
+	}
+
+	for i, e := range list {
+		m, ok := e.(map[string]interface{})
+		if !ok {
+			return remaps, fmt.Errorf("Could not parse seqRemaps entry %d; '%+v'", i+1, e)
+		}
+
+		r := AuditSeqRemap{}
+		for k, v := range m {
+			switch k {
+			case "message_type":
+				if ev, ok := v.(string); ok {
+					fv, err := strconv.ParseUint(ev, 10, 16)
+					if err != nil {
+						return remaps, fmt.Errorf("`message_type` in seqRemaps entry %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
+					}
+					r.messageType = uint16(fv)
+
+				} else if ev, ok := v.(int); ok {
+					r.messageType = uint16(ev)
+
+				} else {
+					return remaps, fmt.Errorf("`message_type` in seqRemaps entry %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+
+			case "regex":
+				re, ok := v.(string)
+				if !ok {
+					return remaps, fmt.Errorf("`regex` in seqRemaps entry %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+
+				if r.regex, err = regexp.Compile(re); err != nil {
+					return remaps, fmt.Errorf("`regex` in seqRemaps entry %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
+				}
+
+			case "offset":
+				if ev, ok := v.(string); ok {
+					r.offset, err = strconv.Atoi(ev)
+					if err != nil {
+						return remaps, fmt.Errorf("`offset` in seqRemaps entry %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
+					}
+
+				} else if ev, ok := v.(int); ok {
+					r.offset = ev
+
+				} else {
+					return remaps, fmt.Errorf("`offset` in seqRemaps entry %d could not be parsed; Value: `%+v`", i+1, v)
+				}
+			}
+		}
+
+		if r.regex == nil {
+			return remaps, fmt.Errorf("seqRemaps entry %d is missing the `regex` entry", i+1)
+		}
+
+		if r.messageType == 0 {
+			return remaps, fmt.Errorf("seqRemaps entry %d is missing the `message_type` entry", i+1)
+		}
+
+		remaps = append(remaps, r)
+		l.Printf("Remapping sequence of message type `%v` using regex `%s` and offset `%d`\n", r.messageType, r.regex.String(), r.offset)
+	}
+
+	return remaps, nil
 }

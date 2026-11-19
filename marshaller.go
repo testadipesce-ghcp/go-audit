@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -12,22 +13,24 @@ const (
 )
 
 type AuditMarshaller struct {
-	msgs          map[int]*AuditMessageGroup
-	writer        *AuditWriter
-	lastSeq       int
-	missed        map[int]bool
-	worstLag      int
-	eventMin      uint16
-	eventMax      uint16
-	trackMessages bool
-	logOutOfOrder bool
-	maxOutOfOrder int
-	attempts      int
-	filters       map[string]map[uint16][]*regexp.Regexp // { syscall: { mtype: [regexp, ...] } }
-	eventAllow    map[uint16]bool
-	eventExclude  map[uint16]bool
-	substitutions map[uint16][]AuditSubstitution // { mtype: [substitution, ...] }
-	extraParsers  ExtraParsers
+	msgs           map[int]*AuditMessageGroup
+	writer         *AuditWriter
+	lastSeq        int
+	missed         map[int]bool
+	worstLag       int
+	eventMin       uint16
+	eventMax       uint16
+	trackMessages  bool
+	logOutOfOrder  bool
+	maxOutOfOrder  int
+	attempts       int
+	filters        map[string]map[uint16][]*regexp.Regexp // { syscall: { mtype: [regexp, ...] } }
+	eventAllow     map[uint16]bool
+	eventExclude   map[uint16]bool
+	substitutions  map[uint16][]AuditSubstitution  // { mtype: [substitution, ...] }
+	messageFilters map[uint16][]AuditMessageFilter // { mtype: [filter, ...] }
+	seqRemaps      map[uint16][]AuditSeqRemap      // { mtype: [remap, ...] }
+	extraParsers   ExtraParsers
 }
 
 type AuditFilter struct {
@@ -44,22 +47,47 @@ type AuditSubstitution struct {
 	replace     string
 }
 
+// Actions for an AuditMessageFilter
+const (
+	FilterActionGrep    = "grep"    // keep only messages whose data matches the regex
+	FilterActionExclude = "exclude" // discard messages whose data matches the regex
+)
+
+// AuditMessageFilter describes a regex test on the data of messages of a given
+// type, and what to do with the message depending on the result
+type AuditMessageFilter struct {
+	messageType uint16
+	regex       *regexp.Regexp
+	action      string
+}
+
+// AuditSeqRemap describes how to replace the sequence number of a message of a
+// given type: the first capture group of the regex (or the whole match if the
+// regex has no groups) is parsed as an integer, and offset is added to it
+type AuditSeqRemap struct {
+	messageType uint16
+	regex       *regexp.Regexp
+	offset      int
+}
+
 // Create a new marshaller
-func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, eventAllow []uint16, eventExclude []uint16, substitutions []AuditSubstitution, extraParsers ExtraParsers) *AuditMarshaller {
+func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, eventAllow []uint16, eventExclude []uint16, substitutions []AuditSubstitution, messageFilters []AuditMessageFilter, seqRemaps []AuditSeqRemap, extraParsers ExtraParsers) *AuditMarshaller {
 	am := AuditMarshaller{
-		writer:        w,
-		msgs:          make(map[int]*AuditMessageGroup, 5), // It is not typical to have more than 2 message groups at any given time
-		missed:        make(map[int]bool, 10),
-		eventMin:      eventMin,
-		eventMax:      eventMax,
-		trackMessages: trackMessages,
-		logOutOfOrder: logOOO,
-		maxOutOfOrder: maxOOO,
-		filters:       make(map[string]map[uint16][]*regexp.Regexp),
-		eventAllow:    make(map[uint16]bool, len(eventAllow)),
-		eventExclude:  make(map[uint16]bool, len(eventExclude)),
-		substitutions: make(map[uint16][]AuditSubstitution, len(substitutions)),
-		extraParsers:  extraParsers,
+		writer:         w,
+		msgs:           make(map[int]*AuditMessageGroup, 5), // It is not typical to have more than 2 message groups at any given time
+		missed:         make(map[int]bool, 10),
+		eventMin:       eventMin,
+		eventMax:       eventMax,
+		trackMessages:  trackMessages,
+		logOutOfOrder:  logOOO,
+		maxOutOfOrder:  maxOOO,
+		filters:        make(map[string]map[uint16][]*regexp.Regexp),
+		eventAllow:     make(map[uint16]bool, len(eventAllow)),
+		eventExclude:   make(map[uint16]bool, len(eventExclude)),
+		substitutions:  make(map[uint16][]AuditSubstitution, len(substitutions)),
+		messageFilters: make(map[uint16][]AuditMessageFilter, len(messageFilters)),
+		seqRemaps:      make(map[uint16][]AuditSeqRemap, len(seqRemaps)),
+		extraParsers:   extraParsers,
 	}
 
 	for _, filter := range filters {
@@ -86,6 +114,14 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 		am.substitutions[sub.messageType] = append(am.substitutions[sub.messageType], sub)
 	}
 
+	for _, ex := range messageFilters {
+		am.messageFilters[ex.messageType] = append(am.messageFilters[ex.messageType], ex)
+	}
+
+	for _, r := range seqRemaps {
+		am.seqRemaps[r.messageType] = append(am.seqRemaps[r.messageType], r)
+	}
+
 	return &am
 }
 
@@ -106,7 +142,7 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 	t := nlMsg.Header.Type
 	inRange := t >= a.eventMin && t <= a.eventMax
 	// if a.eventExclude[t] || !(a.eventAllow[t] || inRange) {
-	if !a.eventAllow[t] && ( a.eventExclude[t] ||  ! inRange) {
+	if !a.eventAllow[t] && (a.eventExclude[t] || !inRange) {
 		// Drop all audit messages that aren't things we care about or end a multi packet event
 		a.flushOld()
 		return
@@ -116,6 +152,13 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 		return
 	}
 
+	if a.isDiscardedMessage(aMsg) {
+		// Discard just this message; the rest of its group is unaffected
+		a.flushOld()
+		return
+	}
+
+	a.applySeqRemaps(aMsg)
 	a.applySubstitutions(aMsg)
 
 	if val, ok := a.msgs[aMsg.Seq]; ok {
@@ -128,6 +171,43 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 	a.extraParsers.Parse(aMsg)
 
 	a.flushOld()
+}
+
+// Returns true if the message should be discarded per the configured message
+// filters for its type. Matching is done against the original, unsubstituted data
+func (a *AuditMarshaller) isDiscardedMessage(am *AuditMessage) bool {
+	for _, f := range a.messageFilters[am.Type] {
+		matched := f.regex.MatchString(am.Data)
+		if (f.action == FilterActionGrep && !matched) || (f.action == FilterActionExclude && matched) {
+			return true
+		}
+	}
+	return false
+}
+
+// Replaces the sequence number of a message with a value extracted from its
+// original (unsubstituted) data plus a configured offset. The first remap that
+// matches and yields an integer wins
+func (a *AuditMarshaller) applySeqRemaps(am *AuditMessage) {
+	for _, r := range a.seqRemaps[am.Type] {
+		m := r.regex.FindStringSubmatch(am.Data)
+		if m == nil {
+			continue
+		}
+
+		captured := m[0]
+		if len(m) > 1 {
+			captured = m[1]
+		}
+
+		n, err := strconv.Atoi(captured)
+		if err != nil {
+			continue
+		}
+
+		am.Seq = n + r.offset
+		return
+	}
 }
 
 // Applies any configured regex substitutions to the data portion of a message,

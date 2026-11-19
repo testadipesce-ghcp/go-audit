@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a `substitutions` config option to rewrite the `data` field of parsed
   messages of a given type via regex, before they are output. Useful for
   redacting or normalizing values.
+- Added a `filter_messages` config option to discard messages of a given type
+  based on a regex test of their data; `action: exclude` discards on match,
+  `action: grep` discards when there is no match.
+- Added a `seqRemaps` config option to replace a message's sequence number with
+  an integer captured from its data by a regex, plus an offset.
 
 ## [1.2.0] - 2023-04-07
 

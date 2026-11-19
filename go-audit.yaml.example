@@ -159,6 +159,29 @@ substitutions:
     regex: cwd="[^"]*"
     replace: cwd="REDACTED"
 
+# Discard individual messages of a given type based on a regex test of their
+# `data`. Unlike `filters`, this is not tied to a syscall and only drops the
+# matching message, not the rest of its message group. Matched against the
+# original data, before `substitutions` are applied.
+filter_messages:
+  # Each filter_messages entry consists of exactly 3 parts
+  - message_type: 1302 # The message type identifier of messages to test against the regex
+    regex: name="/tmp/[^"]*" # The regex to test against the message's data
+    action: exclude # `exclude`: discard the message if the regex matches
+  - message_type: 1300
+    regex: key="audit-keep"
+    action: grep # `grep`: discard the message if the regex does NOT match
+
+# Replace the sequence number of a message with a number found in its data,
+# e.g. to correlate messages that carry a reference to another event's sequence.
+# Applied after `filter_messages`, against the original data (before
+# `substitutions`).
+seqRemaps:
+  # Each seqRemaps entry consists of 3 parts
+  - message_type: 1302 # The message type identifier of messages to remap
+    regex: ref_seq=(\d+) # First capture group (or the whole match if no groups) is parsed as an integer
+    offset: 0 # Added to the captured integer (may be negative) to give the new sequence number
+
 extras:
   # Fetch extra fields for containers:
   # - containers.id
