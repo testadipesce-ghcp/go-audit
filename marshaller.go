@@ -105,7 +105,8 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 
 	t := nlMsg.Header.Type
 	inRange := t >= a.eventMin && t <= a.eventMax
-	if a.eventExclude[t] || !(a.eventAllow[t] || inRange) {
+	// if a.eventExclude[t] || !(a.eventAllow[t] || inRange) {
+	if !a.eventAllow[t] && ( a.eventExclude[t] ||  ! inRange) {
 		// Drop all audit messages that aren't things we care about or end a multi packet event
 		a.flushOld()
 		return
