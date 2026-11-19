@@ -63,11 +63,11 @@ type AuditMessageFilter struct {
 
 // AuditSeqRemap describes how to replace the sequence number of a message of a
 // given type: the first capture group of the regex (or the whole match if the
-// regex has no groups) is parsed as an integer, and offset is added to it
+// regex has no groups) is parsed as an integer, and the message's sequence
+// number is replaced with the negative of that integer
 type AuditSeqRemap struct {
 	messageType uint16
 	regex       *regexp.Regexp
-	offset      int
 }
 
 // Create a new marshaller
@@ -186,7 +186,7 @@ func (a *AuditMarshaller) isDiscardedMessage(am *AuditMessage) bool {
 }
 
 // Replaces the sequence number of a message with a value extracted from its
-// original (unsubstituted) data plus a configured offset. The first remap that
+// original (unsubstituted) data, negated. The first remap that
 // matches and yields an integer wins
 func (a *AuditMarshaller) applySeqRemaps(am *AuditMessage) {
 	for _, r := range a.seqRemaps[am.Type] {
@@ -205,7 +205,7 @@ func (a *AuditMarshaller) applySeqRemaps(am *AuditMessage) {
 			continue
 		}
 
-		am.Seq = n + r.offset
+		am.Seq = -n
 		return
 	}
 }

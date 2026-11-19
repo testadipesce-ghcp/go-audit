@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"regexp"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -245,18 +244,18 @@ func TestAuditMarshaller_Consume_MessageFilters(t *testing.T) {
 func TestAuditMarshaller_Consume_SeqRemaps(t *testing.T) {
 	w := &bytes.Buffer{}
 	remaps := []AuditSeqRemap{
-		{messageType: uint16(1302), regex: regexp.MustCompile(`ref=(\d+)`), offset: 5},
-		{messageType: uint16(1300), regex: regexp.MustCompile(`ref=(\w+)`), offset: 1},
+		{messageType: uint16(1302), regex: regexp.MustCompile(`ref=(\d+)`)},
+		{messageType: uint16(1300), regex: regexp.MustCompile(`ref=(\w+)`)},
 	}
 	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, remaps, nil)
 
-	// Captured integer plus offset replaces the sequence number
+	// Negated captured integer replaces the sequence number
 	m.Consume(&syscall.NetlinkMessage{
 		Header: syscall.NlMsghdr{Type: uint16(1302)},
 		Data:   []byte(`audit(10000001:1): ref=10`),
 	})
-	m.Consume(new1320("15"))
-	assert.Equal(t, 1, strings.Count(w.String(), `"sequence":15,`))
+	assert.Contains(t, m.msgs, -10)
+	assert.NotContains(t, m.msgs, 1)
 
 	// Non-integer capture leaves the sequence number untouched
 	w.Reset()

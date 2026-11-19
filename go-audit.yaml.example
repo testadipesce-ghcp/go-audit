@@ -172,15 +172,15 @@ filter_messages:
     regex: key="audit-keep"
     action: grep # `grep`: discard the message if the regex does NOT match
 
-# Replace the sequence number of a message with a number found in its data,
+# Replace the sequence number of a message with the negative of a number found in its data,
 # e.g. to correlate messages that carry a reference to another event's sequence.
 # Applied after `filter_messages`, against the original data (before
 # `substitutions`).
 seqRemaps:
-  # Each seqRemaps entry consists of 3 parts
+  # Each seqRemaps entry consists of 2 parts
   - message_type: 1302 # The message type identifier of messages to remap
-    regex: ref_seq=(\d+) # First capture group (or the whole match if no groups) is parsed as an integer
-    offset: 0 # Added to the captured integer (may be negative) to give the new sequence number
+    regex: ref_seq=(\d+) # First capture group (or the whole match if no groups) is parsed as an integer;
+    # the message's sequence number is replaced with the negative of that integer
 
 extras:
   # Fetch extra fields for containers:

@@ -760,20 +760,6 @@ func createSeqRemaps(config *viper.Viper) ([]AuditSeqRemap, error) {
 				if r.regex, err = regexp.Compile(re); err != nil {
 					return remaps, fmt.Errorf("`regex` in seqRemaps entry %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
 				}
-
-			case "offset":
-				if ev, ok := v.(string); ok {
-					r.offset, err = strconv.Atoi(ev)
-					if err != nil {
-						return remaps, fmt.Errorf("`offset` in seqRemaps entry %d could not be parsed; Value: `%+v`; Error: %s", i+1, v, err)
-					}
-
-				} else if ev, ok := v.(int); ok {
-					r.offset = ev
-
-				} else {
-					return remaps, fmt.Errorf("`offset` in seqRemaps entry %d could not be parsed; Value: `%+v`", i+1, v)
-				}
 			}
 		}
 
@@ -786,7 +772,7 @@ func createSeqRemaps(config *viper.Viper) ([]AuditSeqRemap, error) {
 		}
 
 		remaps = append(remaps, r)
-		l.Printf("Remapping sequence of message type `%v` using regex `%s` and offset `%d`\n", r.messageType, r.regex.String(), r.offset)
+		l.Printf("Remapping sequence of message type `%v` using regex `%s`\n", r.messageType, r.regex.String())
 	}
 
 	return remaps, nil

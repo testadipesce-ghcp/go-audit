@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   based on a regex test of their data; `action: exclude` discards on match,
   `action: grep` discards when there is no match.
 - Added a `seqRemaps` config option to replace a message's sequence number with
-  an integer captured from its data by a regex, plus an offset.
+  the negative of an integer captured from its data by a regex.
 
 ## [1.2.0] - 2023-04-07
 
