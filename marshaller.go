@@ -4,6 +4,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -27,6 +28,7 @@ type AuditMarshaller struct {
 	filters        map[string]map[uint16][]*regexp.Regexp // { syscall: { mtype: [regexp, ...] } }
 	eventAllow     map[uint16]bool
 	eventExclude   map[uint16]bool
+	singleMessage  map[uint16]bool                 // message types that form a complete group on their own
 	substitutions  map[uint16][]AuditSubstitution  // { mtype: [substitution, ...] }
 	messageFilters map[uint16][]AuditMessageFilter // { mtype: [filter, ...] }
 	seqRemaps      map[uint16][]AuditSeqRemap      // { mtype: [remap, ...] }
@@ -49,7 +51,7 @@ type AuditSubstitution struct {
 
 // Actions for an AuditMessageFilter
 const (
-	FilterActionGrep    = "grep"    // keep only messages whose data matches the regex
+	FilterActionGrep    = "grep"    // keep only messages whose data matches the regex, recording the captured groups joined by ";" as the data
 	FilterActionExclude = "exclude" // discard messages whose data matches the regex
 )
 
@@ -71,7 +73,7 @@ type AuditSeqRemap struct {
 }
 
 // Create a new marshaller
-func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, eventAllow []uint16, eventExclude []uint16, substitutions []AuditSubstitution, messageFilters []AuditMessageFilter, seqRemaps []AuditSeqRemap, extraParsers ExtraParsers) *AuditMarshaller {
+func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackMessages, logOOO bool, maxOOO int, filters []AuditFilter, eventAllow []uint16, eventExclude []uint16, substitutions []AuditSubstitution, messageFilters []AuditMessageFilter, seqRemaps []AuditSeqRemap, singleMessageEvents []uint16, extraParsers ExtraParsers) *AuditMarshaller {
 	am := AuditMarshaller{
 		writer:         w,
 		msgs:           make(map[int]*AuditMessageGroup, 5), // It is not typical to have more than 2 message groups at any given time
@@ -84,6 +86,7 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 		filters:        make(map[string]map[uint16][]*regexp.Regexp),
 		eventAllow:     make(map[uint16]bool, len(eventAllow)),
 		eventExclude:   make(map[uint16]bool, len(eventExclude)),
+		singleMessage:  make(map[uint16]bool, len(singleMessageEvents)),
 		substitutions:  make(map[uint16][]AuditSubstitution, len(substitutions)),
 		messageFilters: make(map[uint16][]AuditMessageFilter, len(messageFilters)),
 		seqRemaps:      make(map[uint16][]AuditSeqRemap, len(seqRemaps)),
@@ -108,6 +111,10 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 
 	for _, t := range eventExclude {
 		am.eventExclude[t] = true
+	}
+
+	for _, t := range singleMessageEvents {
+		am.singleMessage[t] = true
 	}
 
 	for _, sub := range substitutions {
@@ -152,13 +159,17 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 		return
 	}
 
-	if a.isDiscardedMessage(aMsg) {
+	discard, newData, replaceData := a.applyMessageFilters(aMsg)
+	if discard {
 		// Discard just this message; the rest of its group is unaffected
 		a.flushOld()
 		return
 	}
 
 	a.applySeqRemaps(aMsg)
+	if replaceData {
+		aMsg.Data = newData
+	}
 	a.applySubstitutions(aMsg)
 
 	if val, ok := a.msgs[aMsg.Seq]; ok {
@@ -170,19 +181,29 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 	}
 	a.extraParsers.Parse(aMsg)
 
+	if a.singleMessage[aMsg.Type] {
+		// This message type is a complete event on its own, no EOE will follow
+		a.completeMessage(aMsg.Seq)
+	}
+
 	a.flushOld()
 }
 
-// Returns true if the message should be discarded per the configured message
-// filters for its type. Matching is done against the original, unsubstituted data
-func (a *AuditMarshaller) isDiscardedMessage(am *AuditMessage) bool {
+// Evaluates the configured message filters for the type of the message against
+// its original data. Returns discard=true if the message should be dropped. For
+// a matching grep filter, newData is the capture groups of the regex joined by
+// ";" and ok is true; the last matching grep filter wins
+func (a *AuditMarshaller) applyMessageFilters(am *AuditMessage) (discard bool, newData string, ok bool) {
 	for _, f := range a.messageFilters[am.Type] {
-		matched := f.regex.MatchString(am.Data)
-		if (f.action == FilterActionGrep && !matched) || (f.action == FilterActionExclude && matched) {
-			return true
+		m := f.regex.FindStringSubmatch(am.Data)
+		switch {
+		case f.action == FilterActionGrep && m == nil, f.action == FilterActionExclude && m != nil:
+			return true, "", false
+		case f.action == FilterActionGrep:
+			newData, ok = strings.Join(m[1:], ";"), true
 		}
 	}
-	return false
+	return false, newData, ok
 }
 
 // Replaces the sequence number of a message with a value extracted from its

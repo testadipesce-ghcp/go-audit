@@ -14,9 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redacting or normalizing values.
 - Added a `filter_messages` config option to discard messages of a given type
   based on a regex test of their data; `action: exclude` discards on match,
-  `action: grep` discards when there is no match.
+  `action: grep` discards when there is no match, otherwise records the regex's
+  capture groups joined with `;` as the message's data.
 - Added a `seqRemaps` config option to replace a message's sequence number with
   the negative of an integer captured from its data by a regex.
+- Added a `single_message_events` config option listing message types (or
+  ranges) that complete their message group immediately, as if an EOE message
+  had been received.
 
 ## [1.2.0] - 2023-04-07
 

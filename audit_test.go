@@ -735,7 +735,7 @@ func Test_parseEventTypes(t *testing.T) {
 }
 
 func Benchmark_MultiPacketMessage(b *testing.B) {
-	marshaller := NewAuditMarshaller(NewAuditWriter(&noopWriter{}, 1), uint16(1300), uint16(1399), false, false, 1, []AuditFilter{}, nil, nil, nil, nil, nil, nil)
+	marshaller := NewAuditMarshaller(NewAuditWriter(&noopWriter{}, 1), uint16(1300), uint16(1399), false, false, 1, []AuditFilter{}, nil, nil, nil, nil, nil, nil, nil)
 
 	data := make([][]byte, 6)
 

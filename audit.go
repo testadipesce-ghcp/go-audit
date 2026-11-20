@@ -596,6 +596,11 @@ func main() {
 		el.Fatal(err)
 	}
 
+	singleMessageEvents, err := parseEventTypes(config, "single_message_events")
+	if err != nil {
+		el.Fatal(err)
+	}
+
 	nlClient, err := NewNetlinkClient(config.GetInt("socket_buffer.receive"))
 	if err != nil {
 		el.Fatal(err)
@@ -614,6 +619,7 @@ func main() {
 		substitutions,
 		messageFilters,
 		seqRemaps,
+		singleMessageEvents,
 		createExtraParsers(config),
 	)
 
@@ -699,6 +705,10 @@ func createMessageFilters(config *viper.Viper) ([]AuditMessageFilter, error) {
 
 		if ae.regex == nil {
 			return excl, fmt.Errorf("Discard message entry %d is missing the `regex` entry", i+1)
+		}
+
+		if ae.action == FilterActionGrep && ae.regex.NumSubexp() == 0 {
+			return excl, fmt.Errorf("`regex` in filter_messages entry %d must contain at least one capture group for action `grep`; Value: `%s`", i+1, ae.regex.String())
 		}
 
 		if ae.messageType == 0 {

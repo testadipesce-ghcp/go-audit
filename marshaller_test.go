@@ -17,7 +17,7 @@ func TestMarshallerConstants(t *testing.T) {
 
 func TestAuditMarshaller_Consume(t *testing.T) {
 	w := &bytes.Buffer{}
-	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1100), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, nil, nil)
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1100), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, nil, nil, nil)
 
 	// Flush group on 1320
 	m.Consume(&syscall.NetlinkMessage{
@@ -122,7 +122,7 @@ func TestAuditMarshaller_Consume(t *testing.T) {
 
 func TestAuditMarshaller_Consume_EventAllowExclude(t *testing.T) {
 	w := &bytes.Buffer{}
-	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, []uint16{1103}, []uint16{1305}, nil, nil, nil, nil)
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, []uint16{1103}, []uint16{1305}, nil, nil, nil, nil, nil)
 
 	// Allow-listed type outside [min, max] is kept
 	w.Reset()
@@ -149,7 +149,7 @@ func TestAuditMarshaller_Consume_EventAllowExclude(t *testing.T) {
 
 	// Type in both allow and exclude is kept (allow wins)
 	w.Reset()
-	m2 := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, []uint16{1305}, []uint16{1305}, nil, nil, nil, nil)
+	m2 := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, []uint16{1305}, []uint16{1305}, nil, nil, nil, nil, nil)
 	m2.Consume(&syscall.NetlinkMessage{
 		Header: syscall.NlMsghdr{Type: uint16(1305)},
 		Data:   []byte("audit(10000001:3): hi there"),
@@ -169,7 +169,7 @@ func TestAuditMarshaller_Consume_Substitutions(t *testing.T) {
 		{messageType: uint16(1302), regex: regexp.MustCompile(`name="[^"]*"`), replace: `name="REDACTED"`},
 		{messageType: uint16(1302), regex: regexp.MustCompile(`cwd="[^"]*"`), replace: `cwd="REDACTED"`},
 	}
-	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, subs, nil, nil, nil)
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, subs, nil, nil, nil, nil)
 
 	// Message type with substitutions configured has its data rewritten,
 	// both substitutions apply in order
@@ -202,9 +202,9 @@ func TestAuditMarshaller_Consume_MessageFilters(t *testing.T) {
 	w := &bytes.Buffer{}
 	excl := []AuditMessageFilter{
 		{messageType: uint16(1302), regex: regexp.MustCompile(`name="/tmp/[^"]*"`), action: FilterActionExclude},
-		{messageType: uint16(1300), regex: regexp.MustCompile(`keep`), action: FilterActionGrep},
+		{messageType: uint16(1300), regex: regexp.MustCompile(`(name="[^"]*") (keep)`), action: FilterActionGrep},
 	}
-	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, excl, nil, nil)
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, excl, nil, nil, nil)
 
 	// A matching message is discarded, the rest of the group is kept
 	m.Consume(&syscall.NetlinkMessage{
@@ -218,7 +218,7 @@ func TestAuditMarshaller_Consume_MessageFilters(t *testing.T) {
 	m.Consume(new1320("1"))
 	assert.Equal(
 		t,
-		"{\"sequence\":1,\"timestamp\":\"10000001\",\"messages\":[{\"type\":1300,\"data\":\"name=\\\"/tmp/x\\\" keep\"}],\"uid_map\":{}}\n",
+		"{\"sequence\":1,\"timestamp\":\"10000001\",\"messages\":[{\"type\":1300,\"data\":\"name=\\\"/tmp/x\\\";keep\"}],\"uid_map\":{}}\n",
 		w.String(),
 	)
 
@@ -241,13 +241,35 @@ func TestAuditMarshaller_Consume_MessageFilters(t *testing.T) {
 	assert.Equal(t, "", w.String())
 }
 
+func TestAuditMarshaller_Consume_SingleMessageEvents(t *testing.T) {
+	w := &bytes.Buffer{}
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, nil, []uint16{1305}, nil)
+
+	// A single message type is written immediately, without an EOE
+	m.Consume(&syscall.NetlinkMessage{
+		Header: syscall.NlMsghdr{Type: uint16(1305)},
+		Data:   []byte(`audit(10000001:1): a=b`),
+	})
+	assert.Contains(t, w.String(), `"type":1305`)
+	assert.NotContains(t, m.msgs, 1)
+
+	// Other types still wait for the EOE
+	w.Reset()
+	m.Consume(&syscall.NetlinkMessage{
+		Header: syscall.NlMsghdr{Type: uint16(1300)},
+		Data:   []byte(`audit(10000001:2): a=b`),
+	})
+	assert.Equal(t, "", w.String())
+	assert.Contains(t, m.msgs, 2)
+}
+
 func TestAuditMarshaller_Consume_SeqRemaps(t *testing.T) {
 	w := &bytes.Buffer{}
 	remaps := []AuditSeqRemap{
 		{messageType: uint16(1302), regex: regexp.MustCompile(`ref=(\d+)`)},
 		{messageType: uint16(1300), regex: regexp.MustCompile(`ref=(\w+)`)},
 	}
-	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, remaps, nil)
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, remaps, nil, nil)
 
 	// Negated captured integer replaces the sequence number
 	m.Consume(&syscall.NetlinkMessage{
@@ -272,7 +294,7 @@ func TestAuditMarshaller_completeMessage(t *testing.T) {
 	t.Skip()
 	return
 	// lb, elb := hookLogger()
-	// m := NewAuditMarshaller(NewAuditWriter(&FailWriter{}, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, nil)
+	// m := NewAuditMarshaller(NewAuditWriter(&FailWriter{}, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, nil, nil)
 
 	// m.Consume(&syscall.NetlinkMessage{
 	// 	Header: syscall.NlMsghdr{

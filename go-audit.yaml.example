@@ -28,6 +28,16 @@ events:
   #  - 1305
   #  - "1330-1339"
 
+# Event types that consist of a single message and are never followed by an
+# end-of-event (1320) message. A message group is considered complete (and is
+# written out) as soon as a message of one of these types has been processed,
+# as if an EOE had been received for it.
+# Each entry is either a single event type, or an inclusive range "min-max"
+# Default is empty
+single_message_events:
+#  - 1105
+#  - "1700-1799"
+
 # Configure message sequence tracking
 message_tracking:
   # Track messages and identify if we missed any, default true
@@ -169,13 +179,15 @@ filter_messages:
     regex: name="/tmp/[^"]*" # The regex to test against the message's data
     action: exclude # `exclude`: discard the message if the regex matches
   - message_type: 1300
-    regex: key="audit-keep"
-    action: grep # `grep`: discard the message if the regex does NOT match
+    regex: key="(audit-[a-z]+)".*uid=(\d+) # must contain capture groups for `grep`
+    action: grep # `grep`: discard the message if the regex does NOT match; otherwise the
+    # captured groups, joined with ";", are recorded as the message's data
+    # in place of the original (e.g. `audit-keep;1000`)
 
 # Replace the sequence number of a message with the negative of a number found in its data,
 # e.g. to correlate messages that carry a reference to another event's sequence.
 # Applied after `filter_messages`, against the original data (before
-# `substitutions`).
+# `substitutions` and before `grep` replaces the data with its captures).
 seqRemaps:
   # Each seqRemaps entry consists of 2 parts
   - message_type: 1302 # The message type identifier of messages to remap
