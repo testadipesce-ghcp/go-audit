@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os/user"
 	"strconv"
 	"strings"
@@ -41,10 +42,30 @@ type AuditMessageGroup struct {
 	Msgs          []*AuditMessage   `json:"messages"`
 	UidMap        map[string]string `json:"uid_map"`
 	Syscall       string            `json:"-"`
+	noUidMap      bool              // do not gather or emit the uid_map
+}
+
+type auditMessageGroupAlias AuditMessageGroup
+
+// MarshalJSON omits the uid_map annotation entirely when noUidMap is set
+func (amg *AuditMessageGroup) MarshalJSON() ([]byte, error) {
+	if !amg.noUidMap {
+		return json.Marshal((*auditMessageGroupAlias)(amg))
+	}
+
+	return json.Marshal(struct {
+		*auditMessageGroupAlias
+		UidMap map[string]string `json:"uid_map,omitempty"` // shadows the embedded field
+	}{auditMessageGroupAlias: (*auditMessageGroupAlias)(amg)})
 }
 
 // Creates a new message group from the details parsed from the message
 func NewAuditMessageGroup(am *AuditMessage) *AuditMessageGroup {
+	return newAuditMessageGroup(am, false)
+}
+
+// Creates a new message group; with noUidMap no uid_map is gathered or emitted
+func newAuditMessageGroup(am *AuditMessage, noUidMap bool) *AuditMessageGroup {
 	//TODO: allocating 6 msgs per group is lame and we _should_ know ahead of time roughly how many we need
 	amg := &AuditMessageGroup{
 		Seq:           am.Seq,
@@ -52,6 +73,7 @@ func NewAuditMessageGroup(am *AuditMessage) *AuditMessageGroup {
 		CompleteAfter: time.Now().Add(COMPLETE_AFTER),
 		UidMap:        make(map[string]string, 2), // Usually only 2 individual uids per execve
 		Msgs:          make([]*AuditMessage, 0, 6),
+		noUidMap:      noUidMap,
 	}
 
 	amg.AddMessage(am)
@@ -109,6 +131,10 @@ func (amg *AuditMessageGroup) AddMessage(am *AuditMessage) {
 
 // Find all `uid=` occurrences in a message and adds the username to the UidMap object
 func (amg *AuditMessageGroup) mapUids(am *AuditMessage) {
+	if amg.noUidMap {
+		return
+	}
+
 	data := am.Data
 	start := 0
 	end := 0

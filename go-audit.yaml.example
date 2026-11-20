@@ -38,6 +38,10 @@ single_message_events:
 #  - 1105
 #  - "1700-1799"
 
+# If true, do not look up usernames and do not emit the `uid_map` annotation
+# for message groups, default false
+no_uid_map: false
+
 # Configure message sequence tracking
 message_tracking:
   # Track messages and identify if we missed any, default true

@@ -537,6 +537,7 @@ func createSubstitutions(config *viper.Viper) ([]AuditSubstitution, error) {
 func main() {
 	configFile := flag.String("config", "", "Config file location")
 	printVersion := flag.Bool("version", false, "Print version")
+	showInput := flag.Bool("show_input", false, "Emit the messages received from the netlink interface to stderr")
 	stdoutOnly := flag.Bool("stdout", false, "Override the config file's output section and write to stdout (2 attempts)")
 
 	flag.Parse()
@@ -632,6 +633,8 @@ func main() {
 		createExtraParsers(config),
 	)
 
+	marshaller.SetNoUidMap(config.GetBool("no_uid_map"))
+
 	l.Printf("Started processing events in the range [%d, %d]\n", config.GetInt("events.min"), config.GetInt("events.max"))
 
 	//Main loop. Get data from netlink and send it to the json lib for processing
@@ -644,6 +647,11 @@ func main() {
 
 		if msg == nil {
 			continue
+		}
+
+		if *showInput {
+			// Print before Consume, which strips the header from the data
+			el.Printf("type=%d %s\n", msg.Header.Type, msg.Data)
 		}
 
 		marshaller.Consume(msg)
