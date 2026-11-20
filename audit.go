@@ -537,6 +537,7 @@ func createSubstitutions(config *viper.Viper) ([]AuditSubstitution, error) {
 func main() {
 	configFile := flag.String("config", "", "Config file location")
 	printVersion := flag.Bool("version", false, "Print version")
+	stdoutOnly := flag.Bool("stdout", false, "Override the config file's output section and write to stdout (2 attempts)")
 
 	flag.Parse()
 
@@ -554,6 +555,14 @@ func main() {
 	config, err := loadConfig(*configFile)
 	if err != nil {
 		el.Fatal(err)
+	}
+
+	if *stdoutOnly {
+		for _, o := range []string{"syslog", "file", "gelf"} {
+			config.Set("output."+o+".enabled", false)
+		}
+		config.Set("output.stdout.enabled", true)
+		config.Set("output.stdout.attempts", 2)
 	}
 
 	// output needs to be created before anything that write to stdout
