@@ -263,6 +263,20 @@ func TestAuditMarshaller_Consume_SingleMessageEvents(t *testing.T) {
 	assert.Contains(t, m.msgs, 2)
 }
 
+func TestAuditMarshaller_Consume_NoUidMap(t *testing.T) {
+	w := &bytes.Buffer{}
+	m := NewAuditMarshaller(NewAuditWriter(w, 1), uint16(1300), uint16(1399), false, false, 0, []AuditFilter{}, nil, nil, nil, nil, nil, nil, nil)
+	m.SetNoUidMap(true)
+
+	m.Consume(&syscall.NetlinkMessage{
+		Header: syscall.NlMsghdr{Type: uint16(1302)},
+		Data:   []byte(`audit(10000001:1): uid=0 a=b`),
+	})
+	m.Consume(new1320("1"))
+	assert.NotContains(t, w.String(), "uid_map")
+	assert.Contains(t, w.String(), `"sequence":1`)
+}
+
 func TestAuditMarshaller_Consume_SeqRemaps(t *testing.T) {
 	w := &bytes.Buffer{}
 	remaps := []AuditSeqRemap{

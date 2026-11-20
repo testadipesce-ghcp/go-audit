@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a `single_message_events` config option listing message types (or
   ranges) that complete their message group immediately, as if an EOE message
   had been received.
+- Added a `no_uid_map` config option to skip gathering and emitting the
+  `uid_map` annotation of message groups.
 
 ## [1.2.0] - 2023-04-07
 

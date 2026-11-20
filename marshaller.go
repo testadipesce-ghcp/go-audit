@@ -33,6 +33,7 @@ type AuditMarshaller struct {
 	messageFilters map[uint16][]AuditMessageFilter // { mtype: [filter, ...] }
 	seqRemaps      map[uint16][]AuditSeqRemap      // { mtype: [remap, ...] }
 	extraParsers   ExtraParsers
+	noUidMap       bool // do not gather or emit the uid_map of message groups
 }
 
 type AuditFilter struct {
@@ -132,6 +133,11 @@ func NewAuditMarshaller(w *AuditWriter, eventMin uint16, eventMax uint16, trackM
 	return &am
 }
 
+// Disables (or re-enables) gathering and emitting the uid_map of message groups created from now on
+func (a *AuditMarshaller) SetNoUidMap(v bool) {
+	a.noUidMap = v
+}
+
 // Ingests a netlink message and likely prepares it to be logged
 func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 	aMsg := NewAuditMessage(nlMsg)
@@ -178,7 +184,7 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 		val.AddMessage(aMsg)
 	} else {
 		// Create a new AuditMessageGroup
-		a.msgs[aMsg.Seq] = NewAuditMessageGroup(aMsg)
+		a.msgs[aMsg.Seq] = newAuditMessageGroup(aMsg, a.noUidMap)
 	}
 	a.extraParsers.Parse(aMsg)
 
