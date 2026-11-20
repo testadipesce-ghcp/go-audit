@@ -156,6 +156,7 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 	} else if t == EVENT_EOE {
 		// This is end of event msg, flush the msg with that sequence and discard this one
 		a.completeMessage(aMsg.Seq)
+		a.flushOld()
 		return
 	}
 
