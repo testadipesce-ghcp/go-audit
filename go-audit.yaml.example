@@ -186,8 +186,8 @@ filter_messages:
   - message_type: 1300
     regex: key="(audit-[a-z]+)".*uid=(\d+) # must contain capture groups for `grep`
     action: grep # `grep`: discard the message if the regex does NOT match; otherwise the
-    # captured groups, joined with ";", are recorded as the message's data
-    # in place of the original (e.g. `audit-keep;1000`)
+    # captured groups, joined with a blank, are recorded as the message's data
+    # in place of the original (e.g. `audit-keep 1000`)
 
 # Replace the sequence number of a message with the negative of a number found in its data,
 # e.g. to correlate messages that carry a reference to another event's sequence.

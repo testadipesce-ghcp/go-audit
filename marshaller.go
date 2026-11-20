@@ -52,7 +52,7 @@ type AuditSubstitution struct {
 
 // Actions for an AuditMessageFilter
 const (
-	FilterActionGrep    = "grep"    // keep only messages whose data matches the regex, recording the captured groups joined by ";" as the data
+	FilterActionGrep    = "grep"    // keep only messages whose data matches the regex, recording the captured groups joined by a blank as the data
 	FilterActionExclude = "exclude" // discard messages whose data matches the regex
 )
 
@@ -199,7 +199,7 @@ func (a *AuditMarshaller) Consume(nlMsg *syscall.NetlinkMessage) {
 // Evaluates the configured message filters for the type of the message against
 // its original data. Returns discard=true if the message should be dropped. For
 // a matching grep filter, newData is the capture groups of the regex joined by
-// ";" and ok is true; the last matching grep filter wins
+// a blank and ok is true; the last matching grep filter wins
 func (a *AuditMarshaller) applyMessageFilters(am *AuditMessage) (discard bool, newData string, ok bool) {
 	for _, f := range a.messageFilters[am.Type] {
 		m := f.regex.FindStringSubmatch(am.Data)
@@ -207,7 +207,7 @@ func (a *AuditMarshaller) applyMessageFilters(am *AuditMessage) (discard bool, n
 		case f.action == FilterActionGrep && m == nil, f.action == FilterActionExclude && m != nil:
 			return true, "", false
 		case f.action == FilterActionGrep:
-			newData, ok = strings.Join(m[1:], ";"), true
+			newData, ok = strings.Join(m[1:], " "), true
 		}
 	}
 	return false, newData, ok

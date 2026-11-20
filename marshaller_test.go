@@ -218,7 +218,7 @@ func TestAuditMarshaller_Consume_MessageFilters(t *testing.T) {
 	m.Consume(new1320("1"))
 	assert.Equal(
 		t,
-		"{\"sequence\":1,\"timestamp\":\"10000001\",\"messages\":[{\"type\":1300,\"data\":\"name=\\\"/tmp/x\\\";keep\"}],\"uid_map\":{}}\n",
+		"{\"sequence\":1,\"timestamp\":\"10000001\",\"messages\":[{\"type\":1300,\"data\":\"name=\\\"/tmp/x\\\" keep\"}],\"uid_map\":{}}\n",
 		w.String(),
 	)
 
