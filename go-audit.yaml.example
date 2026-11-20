@@ -34,6 +34,7 @@ events:
 # as if an EOE had been received for it.
 # Each entry is either a single event type, or an inclusive range "min-max"
 # Default is empty
+# # ecsyg addition
 single_message_events:
 #  - 1105
 #  - "1700-1799"
